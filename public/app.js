@@ -17,7 +17,6 @@
   const historyKeepEl = document.getElementById("historyKeep");
   const clearHistoryBtn = document.getElementById("clearHistory");
   const promptKeepEl = document.getElementById("promptKeep");
-  // ✅ 删除打赏相关变量，避免元素不存在时崩溃
 
   const MODELS = (window.APP_MODELS || [
     { id: "deepseek-ai/deepseek-v3.2", label: "deepseek-v3.2" },
@@ -30,8 +29,26 @@
   let totalCompletionTokens = 0;
   let totalInEstimate = 0;
   let totalOutEstimate = 0;
-  // ✅ 新增：发送锁，防止连击
   let isSending = false;
+
+  // ✅ 供外部（my-buttons.js）调用的工具函数
+  window.__sessionTruncateTo = function(n) {
+    if (n >= 0 && n <= session.length) {
+      session.splice(n);
+      persistSessionIfEnabled();
+    }
+  };
+  window.__resetSending = function() {
+    isSending = false;
+    sendBtn.disabled = false;
+    sendBtn.textContent = "Send";
+  };
+  window.__sessionDeleteAt = function(start, count) {
+    if (start >= 0 && start < session.length) {
+      session.splice(start, count);
+      persistSessionIfEnabled();
+    }
+  };
 
   const LS_MODEL = "cfw_model";
   const LS_USE_BUILTIN = "cfw_use_builtin";
@@ -48,7 +65,6 @@
   historyKeepEl.checked = historyEnabled;
   promptKeepEl.checked = promptEnabled;
 
-  // ✅ 新增：输入框颜色跟随主题
   function updateInputColor() {
     const isLight = localStorage.getItem("my-theme") === "light";
     inputEl.style.color = isLight ? "#111" : "#fff";
@@ -130,20 +146,16 @@
     }
   }
 
-  // ✅ 改进：localStorage 容量保护，超限自动裁剪最旧消息
   function persistSessionIfEnabled() {
     if (!historyEnabled) return;
     try {
       let data = JSON.stringify(session);
-      // 超过 2MB 开始裁剪最旧消息
       while (data.length > 2 * 1024 * 1024 && session.length > 2) {
-        session.splice(0, 2); // 删最旧一轮对话
+        session.splice(0, 2);
         data = JSON.stringify(session);
       }
       localStorage.setItem(LS_CHAT_SESSION, data);
-    } catch {
-      // localStorage 满了就跳过，不崩溃
-    }
+    } catch {}
   }
 
   function restoreSessionIfEnabled() {
@@ -182,14 +194,12 @@
     });
   }
 
-  // 😈/😇
   personaToggle.addEventListener("click", () => {
     useBuiltin = !useBuiltin;
     personaToggle.textContent = useBuiltin ? "😈" : "😇";
     localStorage.setItem(LS_USE_BUILTIN, useBuiltin ? "1" : "0");
   });
 
-  // Settings
   settingsBtn.addEventListener("click", () => {
     settingsMask.style.display = "flex";
     historyKeepEl.checked = historyEnabled;
@@ -203,7 +213,6 @@
     if (e.target === settingsMask) settingsMask.style.display = "none";
   });
 
-  // history
   historyKeepEl.addEventListener("change", () => {
     historyEnabled = !!historyKeepEl.checked;
     localStorage.setItem(LS_HISTORY_ENABLED, historyEnabled ? "1" : "0");
@@ -219,7 +228,6 @@
     scrollToBottom();
   });
 
-  // custom prompt
   promptKeepEl.addEventListener("change", () => {
     promptEnabled = !!promptKeepEl.checked;
     localStorage.setItem(LS_PROMPT_ENABLED, promptEnabled ? "1" : "0");
@@ -238,16 +246,12 @@
     customPromptEl.value = "";
   });
 
-  // ✅ 删除打赏事件绑定，不再有 donateBtn/donateMask 引用
-
-  // composer
   inputEl.addEventListener("input", () => {
     inputEl.style.height = "auto";
     inputEl.style.height = inputEl.scrollHeight + "px";
     const stick = isNearBottom();
     updateSpacer();
     if (stick) scrollToBottom();
-    // ✅ 输入时更新颜色（切换主题后立即生效）
     updateInputColor();
   });
 
@@ -277,9 +281,7 @@
   });
 
   async function send() {
-    // ✅ 发送锁：正在发送时不允许重复发
     if (isSending) return;
-
     updateSpacer();
     const text = inputEl.value.trim();
     if (!text) return;
@@ -355,12 +357,10 @@
         }
       }
     } catch (e) {
-      // ✅ 捕获网络错误（包括 abort）
       if (e.name !== "AbortError") {
         aiRow.bubble.textContent = `网络错误: ${e.message}`;
       }
     } finally {
-      // ✅ 无论成功失败都解锁
       isSending = false;
       sendBtn.disabled = false;
     }
