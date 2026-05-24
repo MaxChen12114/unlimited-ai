@@ -40,11 +40,11 @@
       const root = document.documentElement;
       Object.entries(vars).forEach(([k, v]) => root.style.setProperty(k, v));
 
-      // 文字颜色
+      // 整体背景 + 文字
       document.body.style.color = light ? "#111" : "#eaeaea";
       document.body.style.background = light ? "#f0f0f0" : "#0b0b0b";
 
-      // ✅ 修复：顶栏背景色（原来写死在CSS里没用变量）
+      // ✅ 顶栏背景（原CSS写死渐变，不走变量，需单独设置）
       if (topbar) {
         topbar.style.background = light
           ? "linear-gradient(to bottom, rgba(240,240,240,.95), rgba(240,240,240,.75))"
@@ -66,22 +66,47 @@
         el.style.color = light ? "#111" : "#fff";
       });
 
-      // pill 颜色
+      // pill 背景
       document.querySelectorAll(".pill").forEach(el => {
         el.style.background = light ? "#e8e8e8" : "#101010";
         el.style.borderColor = light ? "#ccc" : "#2a2a2a";
       });
 
-      // model-label
+      // model-label 文字
       document.querySelectorAll(".model-label").forEach(el => {
         el.style.color = light ? "#444" : "#cfcfcf";
+      });
+
+      // 气泡文字颜色
+      document.querySelectorAll(".bubble, .meta, .stats").forEach(el => {
+        el.style.color = light ? "#111" : "";
+      });
+
+      // 输入框文字
+      const inputEl = document.getElementById("msg");
+      if (inputEl) inputEl.style.color = light ? "#111" : "#fff";
+
+      // Settings 面板背景
+      const settings = document.getElementById("settings");
+      if (settings) {
+        settings.style.background = light ? "#f5f5f5" : "#0f0f0f";
+        settings.style.borderColor = light ? "#ddd" : "#2a2a2a";
+      }
+      document.querySelectorAll(".card").forEach(el => {
+        el.style.background = light ? "#fff" : "#101010";
+        el.style.borderColor = light ? "#e0e0e0" : "#242424";
+      });
+      document.querySelectorAll(".smallbtn").forEach(el => {
+        el.style.background = light ? "#ebebeb" : "#141414";
+        el.style.color = light ? "#111" : "#fff";
+        el.style.borderColor = light ? "#ccc" : "#2a2a2a";
       });
 
       themeBtn.textContent = light ? "☀️" : "🌙";
       localStorage.setItem("my-theme", light ? "light" : "dark");
     }
 
-    // ✅ 修复：把主题按钮追加到末尾，不要插最前面，避免挤压模型选择框
+    // ✅ 插到最前面（替代原来打赏按钮的位置）
     const themeBtn = document.createElement("button");
     themeBtn.className = "iconbtn";
     themeBtn.title = "切换深浅色";
@@ -92,18 +117,12 @@
       applyTheme(isLight);
     });
 
-    // 插到 settingsBtn 后面（末尾）
-    const settingsBtn = document.getElementById("settingsBtn");
-    if (settingsBtn) {
-      settingsBtn.insertAdjacentElement("afterend", themeBtn);
-    } else {
-      topbarInner.appendChild(themeBtn);
-    }
-
+    topbarInner.prepend(themeBtn);
     applyTheme(isLight);
 
     // ───────────────────────────────
     // 2. 智能自动滚动
+    //    用户上翻查看历史时暂停跟随，回到底部自动恢复
     // ───────────────────────────────
     let autoScroll = true;
 
@@ -121,6 +140,7 @@
       scrollObserver.observe(chat, { childList: true, subtree: true, characterData: true });
     }
 
+    // 发送时强制滚到底
     const sendBtn = document.getElementById("sendBtn");
     if (sendBtn) {
       sendBtn.addEventListener("click", () => {
