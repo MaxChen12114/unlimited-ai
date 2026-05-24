@@ -1,4 +1,4 @@
-// my-buttons.js —— 重试按钮 + 停止生成 + 一键复制
+// my-buttons.js —— 重试按钮 + 一键复制
 (function () {
   window.addEventListener("load", function () {
     const chat = document.getElementById("chat");
@@ -6,47 +6,8 @@
     const msgInput = document.getElementById("msg");
     if (!chat || !sendBtn || !msgInput) return;
 
-    let abortController = null;
-
     // ───────────────────────────────
-    // 1. 拦截 fetch，注入 abort 控制
-    // ───────────────────────────────
-    const _originalFetch = window.fetch;
-    window.fetch = function (url, options = {}) {
-      if (typeof url === "string" && url.includes("/api/chat")) {
-        abortController = new AbortController();
-        options = { ...options, signal: abortController.signal };
-        setStopMode(true);
-      }
-      return _originalFetch(url, options).finally(() => {
-        setStopMode(false);
-        abortController = null;
-      });
-    };
-
-    // ───────────────────────────────
-    // 2. Send 按钮切换为"停止生成"
-    // ───────────────────────────────
-    function setStopMode(on) {
-      if (on) {
-        sendBtn.textContent = "⏹ 停止";
-        sendBtn.dataset.stopMode = "1";
-      } else {
-        sendBtn.textContent = "Send";
-        delete sendBtn.dataset.stopMode;
-      }
-    }
-
-    sendBtn.addEventListener("click", function (e) {
-      if (sendBtn.dataset.stopMode === "1") {
-        e.stopImmediatePropagation();
-        if (abortController) abortController.abort();
-        setStopMode(false);
-      }
-    }, true);
-
-    // ───────────────────────────────
-    // 3. 通用小按钮样式
+    // 1. 通用小按钮样式
     // ───────────────────────────────
     function makeBtn(label) {
       const btn = document.createElement("button");
@@ -67,7 +28,7 @@
     }
 
     // ───────────────────────────────
-    // 4. 给 AI 消息行添加"重试 + 复制"
+    // 2. 给 AI 消息行添加"重试 + 复制"
     // ───────────────────────────────
     function addAiButtons(aiRow) {
       if (aiRow.dataset.btnsAttached) return;
@@ -84,10 +45,34 @@
       copyBtn.addEventListener("click", () => {
         const bubble = aiRow.querySelector(".bubble.ai");
         const text = bubble ? bubble.textContent.trim() : "";
-        navigator.clipboard.writeText(text).then(() => {
-          copyBtn.textContent = "✅ 已复制";
+
+        // ✅ 降级方案：clipboard API 失败时用 execCommand（兼容手机）
+        const doFallback = () => {
+          const ta = document.createElement("textarea");
+          ta.value = text;
+          // font-size:16px 防止 iOS Safari 自动缩放
+          ta.style.cssText = "position:fixed;top:0;left:0;opacity:0;font-size:16px;";
+          document.body.appendChild(ta);
+          ta.focus();
+          ta.select();
+          try {
+            document.execCommand("copy");
+            copyBtn.textContent = "✅ 已复制";
+          } catch {
+            copyBtn.textContent = "❌ 失败";
+          }
+          document.body.removeChild(ta);
           setTimeout(() => copyBtn.textContent = "📋 复制", 1500);
-        });
+        };
+
+        if (navigator.clipboard && window.isSecureContext) {
+          navigator.clipboard.writeText(text).then(() => {
+            copyBtn.textContent = "✅ 已复制";
+            setTimeout(() => copyBtn.textContent = "📋 复制", 1500);
+          }).catch(doFallback);
+        } else {
+          doFallback();
+        }
       });
 
       // ── 重试按钮 ──
@@ -97,7 +82,6 @@
         const aiIdx = allRows.indexOf(aiRow);
         if (aiIdx < 0) return;
 
-        // 找到紧前一条用户消息
         const userRowDomIdx = aiIdx - 1;
         if (userRowDomIdx < 0 || !allRows[userRowDomIdx].classList.contains("user")) return;
         const bubble = allRows[userRowDomIdx].querySelector(".bubble.user");
@@ -118,14 +102,13 @@
           }
         });
 
-        // 同步 session：截断到用户消息之前（send() 会重新 push）
+        // 同步 session：截断到用户消息之前
         if (typeof window.__sessionTruncateTo === "function") {
           window.__sessionTruncateTo(aiIdx - 1);
         }
 
-        // 重置按钮状态
+        // 强制重置按钮状态
         sendBtn.disabled = false;
-        delete sendBtn.dataset.stopMode;
         sendBtn.textContent = "Send";
 
         // 填入文字，延迟触发 Enter 自动发送
@@ -147,7 +130,7 @@
     }
 
     // ───────────────────────────────
-    // 5. MutationObserver 监听新 AI 消息
+    // 3. MutationObserver 监听新 AI 消息
     // ───────────────────────────────
     const observer = new MutationObserver(() => {
       chat.querySelectorAll(".row.ai").forEach(addAiButtons);
@@ -155,7 +138,7 @@
 
     observer.observe(chat, { childList: true });
 
-    // ✅ 刷新后历史已恢复时，补充给已有 AI 行加按钮
+    // 刷新后历史已恢复时，补充给已有 AI 行加按钮
     chat.querySelectorAll(".row.ai").forEach(addAiButtons);
   });
 })();
