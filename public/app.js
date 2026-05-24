@@ -5,12 +5,10 @@
   const inputEl = document.getElementById("msg");
   const composerEl = document.getElementById("composer");
   const spacerEl = document.getElementById("bottom-spacer");
-
   const modelSel = document.getElementById("modelSel");
   const personaToggle = document.getElementById("personaToggle");
   const settingsBtn = document.getElementById("settingsBtn");
   const sendBtn = document.getElementById("sendBtn");
-
   const settingsMask = document.getElementById("settingsMask");
   const customPromptEl = document.getElementById("customPrompt");
   const savePromptBtn = document.getElementById("savePrompt");
@@ -19,35 +17,30 @@
   const historyKeepEl = document.getElementById("historyKeep");
   const clearHistoryBtn = document.getElementById("clearHistory");
   const promptKeepEl = document.getElementById("promptKeep");
-
-  const donateBtn = document.getElementById("donateBtn");
-  const donateMask = document.getElementById("donateMask");
-  const donateClose = document.getElementById("donateClose");
+  // ✅ 删除打赏相关变量，避免元素不存在时崩溃
 
   const MODELS = (window.APP_MODELS || [
-    { id: "deepseek-ai/deepseek-v4-pro", label: "deepseek-v4-pro" },
-    { id: "z-ai/glm-5.1", label: "glm-5.1" },
+    { id: "deepseek-ai/deepseek-v3.2", label: "deepseek-v3.2" },
+    { id: "z-ai/glm5", label: "glm5" },
     { id: "openai/gpt-oss-120b", label: "gpt-oss-120b" },
   ]);
 
   const session = [];
-
   let totalPromptTokens = 0;
   let totalCompletionTokens = 0;
   let totalInEstimate = 0;
   let totalOutEstimate = 0;
+  // ✅ 新增：发送锁，防止连击
+  let isSending = false;
 
-  // ====== 本地存储 Key（严格分离：历史 vs 自定义模板） ======
   const LS_MODEL = "cfw_model";
-  const LS_USE_BUILTIN = "cfw_use_builtin";      // "1"=😈, "0"=😇
-
+  const LS_USE_BUILTIN = "cfw_use_builtin";
   const LS_HISTORY_ENABLED = "cfw_history_enabled";
   const LS_CHAT_SESSION = "cfw_chat_session_v1";
-
   const LS_PROMPT_ENABLED = "cfw_prompt_enabled";
   const LS_CUSTOM_PROMPT = "cfw_custom_prompt_v1";
 
-    let useBuiltin = (localStorage.getItem(LS_USE_BUILTIN) ?? "1") === "1";
+  let useBuiltin = (localStorage.getItem(LS_USE_BUILTIN) ?? "1") === "1";
   personaToggle.textContent = useBuiltin ? "😈" : "😇";
 
   let historyEnabled = (localStorage.getItem(LS_HISTORY_ENABLED) ?? "0") === "1";
@@ -55,7 +48,14 @@
   historyKeepEl.checked = historyEnabled;
   promptKeepEl.checked = promptEnabled;
 
-  function estimateTokens(text){
+  // ✅ 新增：输入框颜色跟随主题
+  function updateInputColor() {
+    const isLight = localStorage.getItem("my-theme") === "light";
+    inputEl.style.color = isLight ? "#111" : "#fff";
+  }
+  updateInputColor();
+
+  function estimateTokens(text) {
     if (!text) return 0;
     let cjk = 0, ascii = 0;
     for (const ch of text) {
@@ -72,7 +72,7 @@
     return cjk + Math.ceil(ascii / 4);
   }
 
-  function updateSpacer(){
+  function updateSpacer() {
     if (!composerEl || !spacerEl) return;
     const rect = composerEl.getBoundingClientRect();
     const rootStyle = getComputedStyle(document.documentElement);
@@ -83,39 +83,33 @@
     historyWrap.style.scrollPaddingBottom = h + "px";
   }
 
-  function isNearBottom(){
+  function isNearBottom() {
     const threshold = 120;
     return (historyWrap.scrollHeight - historyWrap.scrollTop - historyWrap.clientHeight) < threshold;
   }
-  function scrollToBottom(){
+
+  function scrollToBottom() {
     historyWrap.scrollTo({ top: historyWrap.scrollHeight, behavior: "auto" });
   }
 
-  function makeRow(role){
+  function makeRow(role) {
     const row = document.createElement("div");
     row.className = "row " + (role === "user" ? "user" : "ai");
-
     const avatar = document.createElement("div");
     avatar.className = "avatar " + (role === "user" ? "human" : "bot");
     avatar.textContent = (role === "user" ? "U" : "B");
-
     const content = document.createElement("div");
     content.className = "content";
-
     const meta = document.createElement("div");
     meta.className = "meta";
     meta.textContent = (role === "user" ? "User" : "Bot");
-
     const bubble = document.createElement("div");
     bubble.className = "bubble " + (role === "user" ? "user" : "ai");
-
     const stats = document.createElement("div");
     stats.className = "stats";
-
     content.appendChild(meta);
     content.appendChild(bubble);
     content.appendChild(stats);
-
     if (role === "user") {
       row.appendChild(content);
       row.appendChild(avatar);
@@ -123,14 +117,12 @@
       row.appendChild(avatar);
       row.appendChild(content);
     }
-
     chatEl.insertBefore(row, spacerEl);
     if (isNearBottom()) scrollToBottom();
-
     return { bubble, stats };
   }
 
-  function clearUIRows(){
+  function clearUIRows() {
     const nodes = Array.from(chatEl.children);
     for (const n of nodes) {
       if (n === spacerEl) continue;
@@ -138,26 +130,34 @@
     }
   }
 
-  function persistSessionIfEnabled(){
+  // ✅ 改进：localStorage 容量保护，超限自动裁剪最旧消息
+  function persistSessionIfEnabled() {
     if (!historyEnabled) return;
-    try { localStorage.setItem(LS_CHAT_SESSION, JSON.stringify(session)); } catch {}
+    try {
+      let data = JSON.stringify(session);
+      // 超过 2MB 开始裁剪最旧消息
+      while (data.length > 2 * 1024 * 1024 && session.length > 2) {
+        session.splice(0, 2); // 删最旧一轮对话
+        data = JSON.stringify(session);
+      }
+      localStorage.setItem(LS_CHAT_SESSION, data);
+    } catch {
+      // localStorage 满了就跳过，不崩溃
+    }
   }
 
-  function restoreSessionIfEnabled(){
+  function restoreSessionIfEnabled() {
     if (!historyEnabled) return;
     const raw = localStorage.getItem(LS_CHAT_SESSION);
     if (!raw) return;
-
     try {
       const arr = JSON.parse(raw);
       if (!Array.isArray(arr)) return;
-
       session.length = 0;
       for (const m of arr) {
         if (!m || (m.role !== "user" && m.role !== "assistant") || typeof m.content !== "string") continue;
         session.push({ role: m.role, content: m.content });
       }
-
       clearUIRows();
       for (const m of session) {
         const r = makeRow(m.role === "user" ? "user" : "assistant");
@@ -167,7 +167,7 @@
     } catch {}
   }
 
-  function initModels(){
+  function initModels() {
     modelSel.innerHTML = "";
     for (const m of MODELS) {
       const opt = document.createElement("option");
@@ -175,10 +175,8 @@
       opt.textContent = m.label;
       modelSel.appendChild(opt);
     }
-
     const saved = localStorage.getItem(LS_MODEL);
     modelSel.value = saved || MODELS[0].id;
-
     modelSel.addEventListener("change", () => {
       localStorage.setItem(LS_MODEL, modelSel.value);
     });
@@ -240,12 +238,7 @@
     customPromptEl.value = "";
   });
 
-  // donate
-  function openDonate(){ donateMask.style.display = "flex"; }
-  function closeDonate(){ donateMask.style.display = "none"; }
-  donateBtn.addEventListener("click", openDonate);
-  donateClose.addEventListener("click", closeDonate);
-  donateMask.addEventListener("click", (e) => { if (e.target === donateMask) closeDonate(); });
+  // ✅ 删除打赏事件绑定，不再有 donateBtn/donateMask 引用
 
   // composer
   inputEl.addEventListener("input", () => {
@@ -254,9 +247,11 @@
     const stick = isNearBottom();
     updateSpacer();
     if (stick) scrollToBottom();
+    // ✅ 输入时更新颜色（切换主题后立即生效）
+    updateInputColor();
   });
 
-  function setupResizeObserver(){
+  function setupResizeObserver() {
     if (!composerEl || typeof ResizeObserver === "undefined") return;
     const ro = new ResizeObserver(() => {
       const stick = isNearBottom();
@@ -265,7 +260,8 @@
     });
     ro.observe(composerEl);
   }
-  function setupViewportListener(){
+
+  function setupViewportListener() {
     if (!window.visualViewport) return;
     window.visualViewport.addEventListener("resize", () => {
       const stick = isNearBottom();
@@ -273,28 +269,31 @@
       if (stick) scrollToBottom();
     });
   }
+
   window.addEventListener("resize", () => {
     const stick = isNearBottom();
     updateSpacer();
     if (stick) scrollToBottom();
   });
 
+  async function send() {
+    // ✅ 发送锁：正在发送时不允许重复发
+    if (isSending) return;
 
-  async function send(){
     updateSpacer();
     const text = inputEl.value.trim();
     if (!text) return;
 
+    isSending = true;
+    sendBtn.disabled = true;
+
     const userRow = makeRow("user");
     userRow.bubble.textContent = text;
-
     const inEst = estimateTokens(text);
     totalInEstimate += inEst;
     userRow.stats.textContent = `Input(估算): ≈${inEst} | Total In(估算): ≈${totalInEstimate}`;
-
     session.push({ role: "user", content: text });
     persistSessionIfEnabled();
-
     inputEl.value = "";
     inputEl.style.height = "auto";
     updateSpacer();
@@ -305,59 +304,65 @@
     let outEndMs = 0;
     let full = "";
     let exactUsage = null;
-
     let customPrompt = "";
+
     if (!useBuiltin) {
       if (promptEnabled) customPrompt = localStorage.getItem(LS_CUSTOM_PROMPT) || "";
     }
 
-    const res = await fetch("/api/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: modelSel.value,
-        use_builtin_persona: useBuiltin,
-        custom_system_prompt: customPrompt,
-        messages: session
-      })
-    });
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: modelSel.value,
+          use_builtin_persona: useBuiltin,
+          custom_system_prompt: customPrompt,
+          messages: session
+        })
+      });
 
-    if (!res.ok) {
-      const t = await res.text().catch(() => "");
-      aiRow.bubble.textContent = `Request failed (${res.status}):\n${t}`;
-      aiRow.stats.textContent = "";
-      return;
-    }
-
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      const chunk = decoder.decode(value, { stream: true });
-      const lines = chunk.split("\n");
-
-      for (const line of lines) {
-        if (!line.startsWith("data: ")) continue;
-
-        const jsonStr = line.replace("data: ", "").trim();
-        if (!jsonStr || jsonStr === "[DONE]") continue;
-
-        try {
-          const parsed = JSON.parse(jsonStr);
-          if (parsed.usage) exactUsage = parsed.usage;
-
-          const delta = parsed.choices?.[0]?.delta?.content;
-          if (delta) {
-            if (!outStartMs) outStartMs = performance.now();
-            full += delta;
-            aiRow.bubble.textContent = full;
-            if (isNearBottom()) scrollToBottom();
-          }
-        } catch {}
+      if (!res.ok) {
+        const t = await res.text().catch(() => "");
+        aiRow.bubble.textContent = `Request failed (${res.status}):\n${t}`;
+        aiRow.stats.textContent = "";
+        return;
       }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split("\n");
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const jsonStr = line.replace("data: ", "").trim();
+          if (!jsonStr || jsonStr === "[DONE]") continue;
+          try {
+            const parsed = JSON.parse(jsonStr);
+            if (parsed.usage) exactUsage = parsed.usage;
+            const delta = parsed.choices?.[0]?.delta?.content;
+            if (delta) {
+              if (!outStartMs) outStartMs = performance.now();
+              full += delta;
+              aiRow.bubble.textContent = full;
+              if (isNearBottom()) scrollToBottom();
+            }
+          } catch {}
+        }
+      }
+    } catch (e) {
+      // ✅ 捕获网络错误（包括 abort）
+      if (e.name !== "AbortError") {
+        aiRow.bubble.textContent = `网络错误: ${e.message}`;
+      }
+    } finally {
+      // ✅ 无论成功失败都解锁
+      isSending = false;
+      sendBtn.disabled = false;
     }
 
     outEndMs = performance.now();
@@ -365,24 +370,19 @@
     persistSessionIfEnabled();
 
     const seconds = Math.max(0.001, (outEndMs - (outStartMs || outEndMs)) / 1000);
-
     if (exactUsage && typeof exactUsage.completion_tokens === "number") {
       const p = exactUsage.prompt_tokens || 0;
       const c = exactUsage.completion_tokens || 0;
       const t = exactUsage.total_tokens || (p + c);
-
       totalPromptTokens += p;
       totalCompletionTokens += c;
-
       const tps = c / seconds;
-
       aiRow.stats.textContent =
         `Prompt: ${p} | Completion: ${c} | Total: ${t} | Speed: ${tps.toFixed(2)} tok/s | CumPrompt: ${totalPromptTokens} | CumCompletion: ${totalCompletionTokens}`;
     } else {
       const outEst = estimateTokens(full);
       totalOutEstimate += outEst;
       const tps = outEst / seconds;
-
       aiRow.stats.textContent =
         `Output(估算): ≈${outEst} | Total Out(估算): ≈${totalOutEstimate} | Speed(估算): ${tps.toFixed(2)} tok/s | (usage未返回)`;
     }
@@ -399,7 +399,7 @@
     }
   });
 
-  function init(){
+  function init() {
     initModels();
     setupResizeObserver();
     setupViewportListener();
