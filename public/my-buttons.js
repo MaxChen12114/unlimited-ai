@@ -9,27 +9,21 @@
     // ───────────────────────────────
     // 1. 通用小按钮样式
     // ───────────────────────────────
-    function makeBtn(label, danger) {
+    function makeBtn(label) {
       const btn = document.createElement("button");
       btn.textContent = label;
       btn.style.cssText = `
-        border: 1px solid ${danger ? "#4a1a1a" : "#2e2e2e"};
-        background: ${danger ? "#1a0a0a" : "#111"};
-        color: ${danger ? "#a04040" : "#777"};
+        border: 1px solid #2e2e2e;
+        background: #111;
+        color: #666;
         border-radius: 10px;
         padding: 4px 11px;
         font-size: 12px;
         cursor: pointer;
         transition: color .15s, background .15s;
       `;
-      btn.addEventListener("mouseenter", () => {
-        btn.style.color = danger ? "#ff6666" : "#fff";
-        btn.style.background = danger ? "#2a0a0a" : "#1e1e1e";
-      });
-      btn.addEventListener("mouseleave", () => {
-        btn.style.color = danger ? "#a04040" : "#777";
-        btn.style.background = danger ? "#1a0a0a" : "#111";
-      });
+      btn.addEventListener("mouseenter", () => { btn.style.color = "#ccc"; btn.style.background = "#1e1e1e"; });
+      btn.addEventListener("mouseleave", () => { btn.style.color = "#666"; btn.style.background = "#111"; });
       return btn;
     }
 
@@ -47,7 +41,7 @@
       wrap.style.cssText = "display:flex;justify-content:flex-start;gap:8px;padding:4px 4px 2px;flex-wrap:wrap;";
 
       // ── 复制按钮 ──
-      const copyBtn = makeBtn("📋 复制");
+      const copyBtn = makeBtn("复制");
       copyBtn.addEventListener("click", () => {
         const bubble = aiRow.querySelector(".bubble.ai");
         const text = bubble ? bubble.textContent.trim() : "";
@@ -60,17 +54,17 @@
           ta.select();
           try {
             document.execCommand("copy");
-            copyBtn.textContent = "✅ 已复制";
+            copyBtn.textContent = "已复制";
           } catch {
-            copyBtn.textContent = "❌ 失败";
+            copyBtn.textContent = "失败";
           }
           document.body.removeChild(ta);
-          setTimeout(() => copyBtn.textContent = "📋 复制", 1500);
+          setTimeout(() => copyBtn.textContent = "复制", 1500);
         };
         if (navigator.clipboard && window.isSecureContext) {
           navigator.clipboard.writeText(text).then(() => {
-            copyBtn.textContent = "✅ 已复制";
-            setTimeout(() => copyBtn.textContent = "📋 复制", 1500);
+            copyBtn.textContent = "已复制";
+            setTimeout(() => copyBtn.textContent = "复制", 1500);
           }).catch(doFallback);
         } else {
           doFallback();
@@ -124,7 +118,7 @@
       });
 
       // ── 删除按钮（只删这一对，不重发）──
-      const delBtn = makeBtn("🗑️ 删除", true);
+      const delBtn = makeBtn("删除");
       delBtn.addEventListener("click", () => {
         const allRows = Array.from(chat.querySelectorAll(".row"));
         const aiIdx = allRows.indexOf(aiRow);
@@ -133,11 +127,11 @@
         const userRowDomIdx = aiIdx - 1;
         const hasUserRow = userRowDomIdx >= 0 && allRows[userRowDomIdx].classList.contains("user");
 
-        // 从 DOM 删除这一对（用户行 + AI 行）
+        // 从 DOM 删除这一对
         aiRow.remove();
         if (hasUserRow) allRows[userRowDomIdx].remove();
 
-        // 同步 session：从中间删除这两条
+        // 同步 session
         if (typeof window.__sessionDeleteAt === "function") {
           const sessionStart = hasUserRow ? userRowDomIdx : aiIdx;
           const count = hasUserRow ? 2 : 1;
