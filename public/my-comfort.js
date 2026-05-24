@@ -4,17 +4,18 @@
     const chat = document.getElementById("chat");
     const history = document.getElementById("history");
     const topbarInner = document.querySelector(".topbar-inner");
+    const topbar = document.getElementById("topbar");
     if (!topbarInner || !history) return;
 
     // ───────────────────────────────
     // 1. 深浅主题切换
     // ───────────────────────────────
     const LIGHT_VARS = {
-      "--bg": "#f5f5f5",
+      "--bg": "#f0f0f0",
       "--border": "#ddd",
       "--muted": "#888",
       "--bubble-ai": "#fff",
-      "--bubble-user": "#e8e8e8",
+      "--bubble-user": "#e2e2e2",
       "--input-bg": "#fff",
       "--input-border": "#ccc",
       "--btn-bg": "#e0e0e0",
@@ -41,49 +42,76 @@
 
       // 文字颜色
       document.body.style.color = light ? "#111" : "#eaeaea";
+      document.body.style.background = light ? "#f0f0f0" : "#0b0b0b";
+
+      // ✅ 修复：顶栏背景色（原来写死在CSS里没用变量）
+      if (topbar) {
+        topbar.style.background = light
+          ? "linear-gradient(to bottom, rgba(240,240,240,.95), rgba(240,240,240,.75))"
+          : "linear-gradient(to bottom, rgba(11,11,11,.92), rgba(11,11,11,.65))";
+        topbar.style.borderBottomColor = light ? "#ddd" : "#151515";
+      }
 
       // select 颜色
       document.querySelectorAll("select").forEach(el => {
         el.style.background = light ? "#fff" : "#0f0f0f";
         el.style.color = light ? "#111" : "#fff";
+        el.style.borderColor = light ? "#ccc" : "#333";
+      });
+
+      // iconbtn 颜色
+      document.querySelectorAll(".iconbtn").forEach(el => {
+        el.style.background = light ? "#e8e8e8" : "#101010";
+        el.style.borderColor = light ? "#ccc" : "#2a2a2a";
+        el.style.color = light ? "#111" : "#fff";
+      });
+
+      // pill 颜色
+      document.querySelectorAll(".pill").forEach(el => {
+        el.style.background = light ? "#e8e8e8" : "#101010";
+        el.style.borderColor = light ? "#ccc" : "#2a2a2a";
+      });
+
+      // model-label
+      document.querySelectorAll(".model-label").forEach(el => {
+        el.style.color = light ? "#444" : "#cfcfcf";
       });
 
       themeBtn.textContent = light ? "☀️" : "🌙";
       localStorage.setItem("my-theme", light ? "light" : "dark");
     }
 
+    // ✅ 修复：把主题按钮追加到末尾，不要插最前面，避免挤压模型选择框
     const themeBtn = document.createElement("button");
     themeBtn.className = "iconbtn";
     themeBtn.title = "切换深浅色";
-    themeBtn.style.flex = "0 0 38px";
+    themeBtn.style.cssText = "flex: 0 0 38px;";
 
     themeBtn.addEventListener("click", () => {
       isLight = !isLight;
       applyTheme(isLight);
     });
 
-    // 插到顶栏最前面
-    topbarInner.prepend(themeBtn);
+    // 插到 settingsBtn 后面（末尾）
+    const settingsBtn = document.getElementById("settingsBtn");
+    if (settingsBtn) {
+      settingsBtn.insertAdjacentElement("afterend", themeBtn);
+    } else {
+      topbarInner.appendChild(themeBtn);
+    }
+
     applyTheme(isLight);
 
     // ───────────────────────────────
     // 2. 智能自动滚动
-    //    用户向上滚时停止跟随，回到底部后恢复
     // ───────────────────────────────
     let autoScroll = true;
-    let userScrolling = false;
 
     history.addEventListener("scroll", () => {
       const distFromBottom = history.scrollHeight - history.scrollTop - history.clientHeight;
-      // 距底部 60px 以内算"在底部"
-      if (distFromBottom < 60) {
-        autoScroll = true;
-      } else {
-        autoScroll = false;
-      }
+      autoScroll = distFromBottom < 60;
     }, { passive: true });
 
-    // 监听聊天内容变化，内容增加时如果 autoScroll = true 就滚动
     if (chat) {
       const scrollObserver = new MutationObserver(() => {
         if (autoScroll) {
@@ -93,7 +121,6 @@
       scrollObserver.observe(chat, { childList: true, subtree: true, characterData: true });
     }
 
-    // 发送消息时强制滚到底（新对话总是要看新回复）
     const sendBtn = document.getElementById("sendBtn");
     if (sendBtn) {
       sendBtn.addEventListener("click", () => {
