@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title>DeepSeek Chat</title>
+  <title>Chat Chat</title>
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
@@ -12,9 +12,8 @@
     <div class="topbar-shell">
       <div class="topbar-scroll" id="topbarScroll">
         <div class="topbar-inner">
-          <button class="iconbtn" id="donateBtn" title="打赏 / Donate">
-            <span class="emoji">☕</span>
-          </button>
+
+          <!-- ✅ 删除了打赏按钮 -->
 
           <a
             href="https://github.com/MallocPointer/unlimited-ai"
@@ -65,9 +64,8 @@
         <h4>本地对话记忆（Local History）</h4>
         <p>
           开启后：刷新页面/重开浏览器仍会恢复对话。关闭后：仅本次页面会话有效，不再落盘保存。<br>
-          ⚠️ 清除历史只会删除本地对话，不会影响“网页自定义人物模板”。
+          ⚠️ 清除历史只会删除本地对话，不会影响"网页自定义人物模板"。
         </p>
-
         <div class="rowline">
           <div class="toggle">
             <input type="checkbox" id="historyKeep">
@@ -85,7 +83,6 @@
           ⚠️ 仅当右上角为 <b>😇</b> 时，此处才会生效；<b>😈 会忽略这里</b>。<br>
           清除模板只会删除网页自定义内容，不会影响本地历史。
         </p>
-
         <div class="rowline">
           <div class="toggle">
             <input type="checkbox" id="promptKeep">
@@ -95,9 +92,7 @@
             <button class="smallbtn danger" id="clearPrompt">清除自定义模板</button>
           </div>
         </div>
-
         <textarea id="customPrompt" placeholder="仅😇时生效：在这里写网页端自定义 system prompt（可多行）。"></textarea>
-
         <div class="rowline">
           <div></div>
           <div class="btns">
@@ -109,22 +104,8 @@
     </div>
   </div>
 
-  <div id="donateMask">
-    <div id="donateCard">
-      <div id="donateHead">
-        <div class="t">打赏 / Donate</div>
-        <button id="donateClose">✕</button>
-      </div>
-      <div id="donateBody">
-        <img id="donateImg" src="/donate.png" alt="WeChat Pay QR" />
-        <div id="donateNote">
-          如果真的帮助到了你，请为我打赏一杯咖啡吧，有了你的赞助，我会将服务一直运行下去的。
-          我的联系方式：admin@airymoon.com。
-          项目开源地址：https://github.com/MallocPointer/unlimited-ai
-        </div>
-      </div>
-    </div>
-  </div>
+  <!-- ✅ 删除了 donateMask 整个弹窗 -->
+
 </div>
 
 <script src="/config.js"></script>
@@ -137,5 +118,8 @@
     }
   });
 </script>
+<!-- ✅ 新增三个脚本 -->
+<script src="/my-buttons.js"></script>
+<script src="/my-comfort.js"></script>
 </body>
 </html>
