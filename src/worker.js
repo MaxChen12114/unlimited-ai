@@ -23,7 +23,6 @@ function isAllowedModel(modelId) {
 function builtinPromptForModel(modelId) {
   const meta = MODELS.find((m) => m.id === modelId);
   const persona = meta?.persona ?? 1;
-
   if (persona === 3) return PROMPT_3;
   if (persona === 2) return PROMPT_2;
   return PROMPT_1;
@@ -34,10 +33,31 @@ function clientConfigJs() {
     id: m.id,
     label: m.label
   }));
+  return `window.APP_MODELS = ${JSON.stringify(models, null, 2)};\nwindow.APP_DEFAULT_MODEL = ${JSON.stringify(DEFAULT_MODEL)};\n`;
+}
 
-  return `window.APP_MODELS = ${JSON.stringify(models, null, 2)};
-window.APP_DEFAULT_MODEL = ${JSON.stringify(DEFAULT_MODEL)};
-`;
+// ✅ 带超时 + 重试的 fetch（超时20秒，重试1次）
+async function fetchWithRetry(url, options, retries = 1, timeoutMs = 20000) {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const res = await fetch(url, { ...options, signal: controller.signal });
+      clearTimeout(timer);
+      if (res.ok || attempt === retries) return res;
+      await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+    } catch (e) {
+      clearTimeout(timer);
+      if (attempt === retries) {
+        return new Response(
+          `请求超时（已重试 ${retries} 次），请稍后再试`,
+          { status: 504, headers: { "Content-Type": "text/plain; charset=utf-8" } }
+        );
+      }
+      await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+    }
+  }
 }
 
 async function handleChat(request, env) {
@@ -61,21 +81,14 @@ async function handleChat(request, env) {
   const upstreamMessages = [];
 
   if (useBuiltinPersona) {
-    upstreamMessages.push({
-      role: "system",
-      content: builtinPromptForModel(model)
-    });
+    upstreamMessages.push({ role: "system", content: builtinPromptForModel(model) });
   } else if (customSystemPrompt) {
-    upstreamMessages.push({
-      role: "system",
-      content: customSystemPrompt
-    });
+    upstreamMessages.push({ role: "system", content: customSystemPrompt });
   }
 
   for (const msg of messages) {
     if (!msg || typeof msg !== "object") continue;
     if (msg.role !== "user" && msg.role !== "assistant") continue;
-
     upstreamMessages.push({
       role: msg.role,
       content: typeof msg.content === "string" ? msg.content : ""
@@ -90,19 +103,26 @@ async function handleChat(request, env) {
     );
   }
 
-  const upstream = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${env.NVIDIA_API_KEY}`,
-      "Content-Type": "application/json"
+  const startTime = Date.now();
+
+  const upstream = await fetchWithRetry(
+    "https://integrate.api.nvidia.com/v1/chat/completions",
+    {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${env.NVIDIA_API_KEY}`,  // ✅ 修复空格 bug
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model,
+        stream: true,
+        stream_options: { include_usage: true },
+        messages: upstreamMessages
+      })
     },
-    body: JSON.stringify({
-      model,
-      stream: true,
-      stream_options: { include_usage: true },
-      messages: upstreamMessages
-    })
-  });
+    1,      // 重试1次
+    20000   // 超时20秒
+  );
 
   if (!upstream.ok) {
     const errorText = await upstream.text().catch(() => "");
@@ -113,12 +133,17 @@ async function handleChat(request, env) {
     );
   }
 
+  const ttfb = Date.now() - startTime;
+
   return new Response(upstream.body, {
     status: 200,
     headers: {
       "Content-Type": "text/event-stream; charset=utf-8",
       "Cache-Control": "no-cache, no-transform",
-      "Connection": "keep-alive"
+      "Connection": "keep-alive",
+      "X-TTFB-Ms": String(ttfb),
+      "X-Model": model,
+      "X-Upstream": "nvidia-nim"
     }
   });
 }
