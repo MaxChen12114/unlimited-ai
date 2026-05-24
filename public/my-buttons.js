@@ -6,8 +6,7 @@
     const msgInput = document.getElementById("msg");
     if (!chat || !sendBtn || !msgInput) return;
 
-    let retryWrap = null;
-    let abortController = null; // 用于停止生成
+    let abortController = null;
 
     // ───────────────────────────────
     // 1. 拦截 fetch，注入 abort 控制
@@ -43,85 +42,11 @@
         e.stopImmediatePropagation();
         if (abortController) abortController.abort();
         setStopMode(false);
-        // 在最后一条 AI 消息后追加中断提示
-        const aiRows = chat.querySelectorAll(".row.ai");
-        if (aiRows.length > 0) {
-          const notice = document.createElement("div");
-          notice.style.cssText = "font-size:12px;color:#666;padding:0 6px 8px;text-align:left;";
-          notice.textContent = "⚠️ 已停止生成";
-          aiRows[aiRows.length - 1].insertAdjacentElement("afterend", notice);
-        }
       }
     }, true);
 
     // ───────────────────────────────
-    // 3. 重试按钮
-    // ───────────────────────────────
-    function addRetryBtn(userRow) {
-      if (retryWrap) retryWrap.remove();
-
-      const wrap = document.createElement("div");
-      wrap.className = "my-retry-wrap";
-      wrap.style.cssText = "display:flex;justify-content:flex-end;gap:8px;padding:2px 6px 10px;";
-
-      const btn = makeBtn("↺ 重试");
-      btn.addEventListener("click", () => {
-        const bubble = userRow.querySelector(".bubble.user");
-        if (!bubble) return;
-        const text = bubble.textContent.trim();
-        if (!text) return;
-
-        // 删除该用户消息之后所有行
-        const rows = Array.from(chat.querySelectorAll(".row"));
-        const idx = rows.indexOf(userRow);
-        for (let i = rows.length - 1; i > idx; i--) rows[i].remove();
-
-        // 删除"已停止生成"提示
-        chat.querySelectorAll("div[style*='已停止']").forEach(el => el.remove());
-
-        userRow.remove();
-        wrap.remove();
-        retryWrap = null;
-
-        msgInput.value = text;
-        msgInput.dispatchEvent(new Event("input"));
-        sendBtn.click();
-      });
-
-      wrap.appendChild(btn);
-      retryWrap = wrap;
-      userRow.insertAdjacentElement("afterend", wrap);
-    }
-
-    // ───────────────────────────────
-    // 4. 复制按钮（加在 AI 消息上）
-    // ───────────────────────────────
-    function addCopyBtn(aiRow) {
-      if (aiRow.dataset.copyAttached) return;
-      aiRow.dataset.copyAttached = "1";
-
-      const content = aiRow.querySelector(".content");
-      if (!content) return;
-
-      const row = document.createElement("div");
-      row.style.cssText = "display:flex;justify-content:flex-start;padding:2px 4px 4px;";
-
-      const btn = makeBtn("📋 复制");
-      btn.addEventListener("click", () => {
-        const bubble = aiRow.querySelector(".bubble.ai");
-        const text = bubble ? bubble.textContent.trim() : "";
-        navigator.clipboard.writeText(text).then(() => {
-          btn.textContent = "✅ 已复制";
-          setTimeout(() => btn.textContent = "📋 复制", 1500);
-        });
-      });
-
-      row.appendChild(btn);
-      content.appendChild(row);
-    }
-
-    // ───────────────────────────────
-    // 5. 通用小按钮样式
+    // 3. 通用小按钮样式
     // ───────────────────────────────
     function makeBtn(label) {
       const btn = document.createElement("button");
@@ -136,26 +61,78 @@
         cursor: pointer;
         transition: color .15s, background .15s;
       `;
-      btn.addEventListener("mouseenter", () => { btn.style.color="#fff"; btn.style.background="#1e1e1e"; });
-      btn.addEventListener("mouseleave", () => { btn.style.color="#777"; btn.style.background="#111"; });
+      btn.addEventListener("mouseenter", () => { btn.style.color = "#fff"; btn.style.background = "#1e1e1e"; });
+      btn.addEventListener("mouseleave", () => { btn.style.color = "#777"; btn.style.background = "#111"; });
       return btn;
     }
 
     // ───────────────────────────────
-    // 6. MutationObserver 监听新消息
+    // 4. 给 AI 消息行添加"重试 + 复制"按钮
+    //    重试 = 删掉此条 AI 回复，用上一条用户消息重新发请求
+    // ───────────────────────────────
+    function addAiButtons(aiRow) {
+      if (aiRow.dataset.btnsAttached) return;
+      aiRow.dataset.btnsAttached = "1";
+
+      const content = aiRow.querySelector(".content");
+      if (!content) return;
+
+      const wrap = document.createElement("div");
+      wrap.style.cssText = "display:flex;justify-content:flex-start;gap:8px;padding:4px 4px 2px;";
+
+      // ── 复制按钮 ──
+      const copyBtn = makeBtn("📋 复制");
+      copyBtn.addEventListener("click", () => {
+        const bubble = aiRow.querySelector(".bubble.ai");
+        const text = bubble ? bubble.textContent.trim() : "";
+        navigator.clipboard.writeText(text).then(() => {
+          copyBtn.textContent = "✅ 已复制";
+          setTimeout(() => copyBtn.textContent = "📋 复制", 1500);
+        });
+      });
+
+      // ── 重试按钮 ──
+      const retryBtn = makeBtn("↺ 重试");
+      retryBtn.addEventListener("click", () => {
+        // 找到此 AI 消息之前最近的一条用户消息内容
+        const allRows = Array.from(chat.querySelectorAll(".row"));
+        const aiIdx = allRows.indexOf(aiRow);
+        let lastUserText = "";
+        for (let i = aiIdx - 1; i >= 0; i--) {
+          if (allRows[i].classList.contains("user")) {
+            const bubble = allRows[i].querySelector(".bubble.user");
+            if (bubble) lastUserText = bubble.textContent.trim();
+            break;
+          }
+        }
+        if (!lastUserText) return;
+
+        // 删除此条 AI 消息（含按钮区域）
+        // 同时删除 AI 消息后可能存在的"已停止"提示
+        let next = aiRow.nextSibling;
+        while (next && next.nodeType === 1 && !next.classList.contains("row")) {
+          const tmp = next.nextSibling;
+          next.remove();
+          next = tmp;
+        }
+        aiRow.remove();
+
+        // 把用户消息文字填入输入框并发送
+        msgInput.value = lastUserText;
+        msgInput.dispatchEvent(new Event("input"));
+        sendBtn.click();
+      });
+
+      wrap.appendChild(retryBtn);
+      wrap.appendChild(copyBtn);
+      content.appendChild(wrap);
+    }
+
+    // ───────────────────────────────
+    // 5. MutationObserver 监听新 AI 消息
     // ───────────────────────────────
     const observer = new MutationObserver(() => {
-      // 处理最新用户消息 → 重试按钮
-      const userRows = chat.querySelectorAll(".row.user");
-      if (userRows.length > 0) {
-        const last = userRows[userRows.length - 1];
-        if (!last.dataset.retryAttached) {
-          last.dataset.retryAttached = "1";
-          addRetryBtn(last);
-        }
-      }
-      // 处理所有 AI 消息 → 复制按钮
-      chat.querySelectorAll(".row.ai").forEach(addCopyBtn);
+      chat.querySelectorAll(".row.ai").forEach(addAiButtons);
     });
 
     observer.observe(chat, { childList: true });
