@@ -67,8 +67,7 @@
     }
 
     // ───────────────────────────────
-    // 4. 给 AI 消息行添加"重试 + 复制"按钮
-    //    重试 = 删掉此条 AI 回复，用上一条用户消息重新发请求
+    // 4. 给 AI 消息行添加"重试 + 复制"
     // ───────────────────────────────
     function addAiButtons(aiRow) {
       if (aiRow.dataset.btnsAttached) return;
@@ -94,33 +93,52 @@
       // ── 重试按钮 ──
       const retryBtn = makeBtn("↺ 重试");
       retryBtn.addEventListener("click", () => {
-        // 找到此 AI 消息之前最近的一条用户消息内容
         const allRows = Array.from(chat.querySelectorAll(".row"));
         const aiIdx = allRows.indexOf(aiRow);
-        let lastUserText = "";
-        for (let i = aiIdx - 1; i >= 0; i--) {
-          if (allRows[i].classList.contains("user")) {
-            const bubble = allRows[i].querySelector(".bubble.user");
-            if (bubble) lastUserText = bubble.textContent.trim();
-            break;
-          }
-        }
+        if (aiIdx < 0) return;
+
+        // 找到紧前一条用户消息
+        const userRowDomIdx = aiIdx - 1;
+        if (userRowDomIdx < 0 || !allRows[userRowDomIdx].classList.contains("user")) return;
+        const bubble = allRows[userRowDomIdx].querySelector(".bubble.user");
+        if (!bubble) return;
+        const lastUserText = bubble.textContent.trim();
         if (!lastUserText) return;
 
-        // 删除此条 AI 消息（含按钮区域）
-        // 同时删除 AI 消息后可能存在的"已停止"提示
-        let next = aiRow.nextSibling;
-        while (next && next.nodeType === 1 && !next.classList.contains("row")) {
-          const tmp = next.nextSibling;
-          next.remove();
-          next = tmp;
+        // 从 DOM 删除：用户消息、AI 消息、以及之后所有行
+        for (let i = allRows.length - 1; i >= userRowDomIdx; i--) {
+          allRows[i].remove();
         }
-        aiRow.remove();
 
-        // 把用户消息文字填入输入框并发送
+        // 清理行之间可能残留的非 row 节点
+        const spacer = document.getElementById("bottom-spacer");
+        Array.from(chat.childNodes).forEach(node => {
+          if (node !== spacer && !node.classList?.contains("row")) {
+            node.remove();
+          }
+        });
+
+        // 同步 session：截断到用户消息之前（send() 会重新 push）
+        if (typeof window.__sessionTruncateTo === "function") {
+          window.__sessionTruncateTo(aiIdx - 1);
+        }
+
+        // 重置按钮状态
+        sendBtn.disabled = false;
+        delete sendBtn.dataset.stopMode;
+        sendBtn.textContent = "Send";
+
+        // 填入文字，延迟触发 Enter 自动发送
         msgInput.value = lastUserText;
         msgInput.dispatchEvent(new Event("input"));
-        sendBtn.click();
+
+        setTimeout(() => {
+          msgInput.dispatchEvent(new KeyboardEvent("keydown", {
+            key: "Enter",
+            bubbles: true,
+            cancelable: true
+          }));
+        }, 30);
       });
 
       wrap.appendChild(retryBtn);
@@ -136,5 +154,8 @@
     });
 
     observer.observe(chat, { childList: true });
+
+    // ✅ 刷新后历史已恢复时，补充给已有 AI 行加按钮
+    chat.querySelectorAll(".row.ai").forEach(addAiButtons);
   });
 })();
